@@ -2,7 +2,8 @@ MANIFEST
 Makefile.PL
 README
 LockDisplay.pm
-LockDisplay.pod
+LockDisplay/counter.pm
+LockDisplay/lines.pm
 misc/spectrum-colors
 misc/tklock-fract.gif
 test.pl

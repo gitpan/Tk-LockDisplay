@@ -17,8 +17,13 @@ default, the password entry widget and logo are hidden so all that
 remains is the colorful screen saver display.  The "velocity" of the
 moving screen saver pattern is also user configurable.
 
-Tk::LockDisplay ships with a few screen savers, but has a hook to
-register your own Perl/Tk subroutine.
+Tk::LockDisplay ships with a few screensaver plugins, and has a hook
+to register your own Perl/Tk plugin or subroutine.  The special plugin
+'none' disables the screensaver animation.
+
+Oh, this code almost runs on WIN32.  The real problem is that LocKDisplay
+bombs on the getlogin() call - rightly so, I suppose.  Once you fake that,
+there's a memory leak, likely an after() or repeat() problem.
 
 Installation:
 

@@ -1,42 +1,49 @@
 
+$Tk::LockDisplay::VERSION = '1.1';
+
 package Tk::LockDisplay;
 
-# Quick and dirty xlock-like dialog that requires authentication before unlocking the display.
+# An xlock-like dialog that requires authentication before unlocking the display.
 #
 # Stephen.O.Lidie@Lehigh.EDU, Lehigh University Computing Center.  98/08/12
 #
 # This program is free software; you can redistribute it and/or modify it under
 # the same terms as Perl itself.
 
-use 5.005;
+use 5.004;
 use Carp;
 use Tk::Toplevel;
 use strict;
-use base qw/Tk::Toplevel/;
+use base qw/Tk::Derived Tk::Toplevel/;
 Construct Tk::Widget 'LockDisplay';
 
 sub Lock {
 
     # Realize the dialog, start the screensaver and snooze timer events, clear the password entry, save the current focus and
     # grab and set ours, raise the dialog and wait for the password, release our grab, clear timers, hide the dialog and restore
-    # the original focus and grab.  Whew.
+    # the original focus and grab.  Whew.  (Of course, no timer stuff unless we're animating.)
 
     my($self) = @_;
     
     $self->deiconify;
     $self->waitVisibility;
-    $self->{mid} = $self->repeat($self->{Configure}{-velocity} => [$self => 'mesmerize']);
-    $self->{tid} = $self->after($self->{Configure}{-hide} * 1000  => [$self => 'snooze']);
-    $self->{e}->delete(0 => 'end');
+    my $mez = $self->{Configure}{-animation};
+    unless ($mez eq 'none') {
+	$self->{mid} = $self->repeat($self->{Configure}{-animationinterval} => [$self => 'mesmerize']);
+	$self->{tid} = $self->after($self->{Configure}{-hide} * 1000  => [$self => 'snooze']);
+    }
+    $self->{entry}->delete(0 => 'end');
     my $old_focus = $self->focusSave;
     my $old_grab  = $self->grabSave;
-    $self->{e}->focus;
+    $self->{entry}->focusForce;
     $self->grab(-global);
     $self->raise;
     $self->waitVariable(\$self->{unlock});
     $self->grabRelease;
-    $self->afterCancel($self->{tid});
-    $self->afterCancel($self->{mid});
+    unless ($mez eq 'none') {
+	$self->afterCancel($self->{tid});
+	$self->afterCancel($self->{mid});
+    }
     $self->withdraw;
     &$old_focus;
     &$old_grab;
@@ -45,78 +52,92 @@ sub Lock {
 
 sub Populate {
 
-    # LockDisplay constructor.
+    # LockDisplay constructor.  These are the composite widget instance keys:
+    #
+    # -authenticate => authentication subroutine
+    # user          => username
+    # pw            => password
+    # unlock        => changes when user properly authenticates
+    #
+    # w             => display width, pixels
+    # h             => display height, pixels
+    # canvas        => canvas widget reference
+    # label         => label widget reference
+    # entry         => entry widget reference
+    #
+    # tid           => -hide after() timer id
+    # mid           => -animation interval repeat() id
+    #
+    # plug_init     => 1 IFF plugin initialized
+    # -debug        => 1 IFF <Double-1> can unlock display
 
     my($cw, $args) = @_;
 
-    die "Can't get user name." if not my $user = getlogin;
+    # Disable interactions with the window manager.
+    
+    $cw->withdraw;
+    $cw->protocol('WM_DELETE_WINDOW' => sub {});
+    $cw->overrideredirect(1);
+
+    # Process arguments.
+
+    my $user;
+    die "Can't get user name." if not $user = getlogin;
     $cw->{user} = $user;
     $cw->{-authenticate} = delete $args->{-authenticate};
     die "-authenticate callback is improper or missing." unless ref($cw->{-authenticate}) eq 'CODE';
     $cw->{-debug} = delete $args->{-debug};
     $cw->{-debug} ||= 0;
+    $args->{-animation} ||= 'lines';
     $cw->SUPER::Populate($args);
     
-    $cw->withdraw;
-    $cw->protocol('WM_DELETE_WINDOW' => sub {});
-    $cw->transient;
-    $cw->overrideredirect(1);
-
-    # Mesmerizer constants.
-
-    my(@points) = ( [20,20, 6, 9], [580,380,-3, -5] ); # initial end points of the line
-    $cw->{points} = \@points;
-
-    # 64 color constants I extracted from my special "continuous spectra" file containing 1000 data points.
-
-    my(@colors) = (qw/
-	       ffff00000000 ffff13f80000 ffff2b020000 ffff420c0000 ffff59160000 ffff70200000 ffff872a0000 ffff9e350000
-	       ffffb53f0000 ffffcc490000 ffffe3530000 fffffa5d0000 ee97ffff0000 d78cffff0000 c082ffff0000 a978ffff0000
-	       926effff0000 7b64ffff0000 645affff0000 4d50ffff0000 3645ffff0000 1f3bffff0000 0831ffff0000 0000ffff0ed9
-	       0000ffff25e3 0000ffff3ced 0000ffff53f7 0000ffff6b02 0000ffff820c 0000ffff9916 0000ffffb020 0000ffffc72a
-	       0000ffffde34 0000fffff53f 0000f3b5ffff 0000dcabffff 0000c5a1ffff 0000ae97ffff 0000978dffff 00008083ffff
-	       00006978ffff 0000526effff 00003b64ffff 0000245affff 00000d50ffff 09ba0000ffff 20c40000ffff 37cf0000ffff
-	       4ed90000ffff 65e30000ffff 7ced0000ffff 93f70000ffff ab010000ffff c20c0000ffff d9160000ffff f0200000ffff
-	       ffff0000f8d4 ffff0000e1ca ffff0000cac0 ffff0000b3b6 ffff00009cab ffff000085a1 ffff00006e97 ffff0000578d
-	       /);
-    $cw->{colors} = \@colors;
-
     # Miscellaneous constants
 
-    my $v = '1.0';
     my($w, $h) = ($cw->screenwidth, $cw->screenheight);
     $cw->{w} = $w;
     $cw->{h} = $h;
-    my $ti = "tklock $v";
-    my $max_lines = 80;
-    $cw->{max_lines} = $max_lines;
-    my $line_count = 0;
-    $cw->{line_count} = $line_count;
+    my $ti = "tklock $Tk::LockDisplay::VERSION";
 
-    # The canvas et.al.
-
-    my $canvas = $cw->Canvas(-width => $w, -height => $h)->grid;
-    $cw->{canvas} = $canvas;
-    my $fn = [qw/roman -30 italic bold/];
+    # The canvas/label/entry, et.al.
+    
+    my $mez = $args->{-animation};
     my $pw;
     $cw->{pw} = \$pw;
-    my $e = $canvas->Entry(-textvariable => \$pw, -show => '*');
-    $cw->{e} = $e;
-    my $my = $canvas->fontMeasure($fn, 'O');
-    $cw->{my} = $my;
-    $canvas->createText($w/2, $h/2 - 2*$my, -text => $ti, -font => $fn, -fill => 'orange');
-    $canvas->createWindow($w/2, $h/2, -window => $e);
+    my $canvas = $cw->Canvas;
+    $cw->{canvas} = $canvas;
+    my $frame = $canvas->Frame;
+    my $l = $frame->Label(-text => $ti, -font => 'fixed')->grid;
+    $cw->{label} = $l;
+    my $e = $frame->Entry(-textvariable => \$pw, -show => '*', -width => 10)->grid;
+    $cw->{entry} = $e;
+
+    if ($mez eq 'none') {
+	$cw->geometry('+' . int($w/2) . '+' . int($h/2));
+	$canvas->createWindow(64, 24, -window => $frame);
+	$canvas->configure(-width => 126, -height => 47);
+    } else {
+	$canvas->configure(-width => $w, -height => $h);
+	$canvas->createWindow($w/2, $h/2, -window => $frame);
+    }
+    $canvas->grid;
+
+    # Composite widget parameter definitions.
 
     $cw->ConfigSpecs(
-		     -background => [$canvas, qw/background Background black/],
-		     -velocity   => [qw/PASSIVE velocity Velocity 10/],
-		     -hide       => [qw/PASSIVE hide Hide 10/],
-		     -mesmerize  => [qw/PASSIVE mesmerize Mesmerize lines/],
+		     -animation         => [qw/PASSIVE animation Animation lines/],
+		     -animationinterval => [qw/PASSIVE animationInterval AnimationInterval 10/],
+		     -background        => [$canvas, qw/background Background black/],
+		     -foreground        => [$l, qw/ foreground Foreground blue/],
+		     -hide              => [qw/PASSIVE hide Hide 10/],
+		     -text              => [qw/METHOD text Text/, $ti],
 		     );
 
     $cw->{tid} = undef;		# timer ID
     $cw->{mid} = undef;		# mesmerizer ID
     $cw->{unlock} = 1;		# unlock flag
+    $cw->{plug_init} = 0;	# 0 until plugin initialized
+
+    # Widget bindings.
 
     $cw->bind('<Motion>'   => [\&awake, $cw]);
     $cw->bind('<Any-Key>'  => [\&awake, $cw]);
@@ -133,11 +154,12 @@ sub awake {
     my($subwidget, $self) = @_;
 
     my $canvas = $self->{canvas};
-    $canvas->afterCancel($self->{tid});
-    my($w, $h, $my) = ($self->{w}, $self->{h}, $self->{my});
-    $canvas->coords(1, $w/2, $h/2 - 2*$my);
-    $canvas->coords(2, $w/2, $h/2);
-    $self->{tid} = $canvas->after($self->{Configure}{-hide} * 1000 => [$self => 'snooze']);
+    unless ($self->{Configure}{-animation} eq 'none') {
+	$canvas->afterCancel($self->{tid});
+	my($w, $h) = ($self->{w}, $self->{h});
+	$canvas->coords(1, $w/2, $h/2);
+	$self->{tid} = $canvas->after($self->{Configure}{-hide} * 1000 => [$self => 'snooze']);
+    }
     
     if (ref($subwidget) eq 'Tk::Entry') {
 	if ($Tk::event->K eq 'Return') {
@@ -145,7 +167,7 @@ sub awake {
 	    if (&{$self->{-authenticate}}($self->{user}, ${$self->{pw}})) {
 	        $self->unlock;
 	    } else {
-		$self->{e}->delete(0 => 'end');
+		$self->{entry}->delete(0 => 'end');
 		$self->bell;
 	    }
         } # ifend <Return>
@@ -155,58 +177,33 @@ sub awake {
 
 sub mesmerize {
 
-    # Animate mesmerizer.  Reflect two points (the line's endpoints) around the confines of the canvas and draw a line between
-    # them.  Lines are assigned a color and a tag - the tag tells us on which iteration the line should be deleted.
-    #
-    # Now we handle other screen savers, as well as user code.
+    # Animate mesmerizer, either user supplied <CODE>, no screensaver, or a builtin plugin.
 
     my($self) = @_;
 
     my $canvas = $self->{canvas};
-    my $mez = $self->{Configure}{-mesmerize};
+    my $mez = $self->{Configure}{-animation};
 
     if (ref($mez) eq 'CODE') {	# user specified mesmerizing routine
         &$mez($canvas);
-    } elsif ($mez eq 'lines') {
-	my($line_count, $max_lines) = ($self->{line_count}, $self->{max_lines});
-	my($h, $w) = ($self->{h}, $self->{w});
-	my $tag = 'l' . ($line_count - $max_lines);
-	$canvas->delete($tag);
-	my(@points) = @{$self->{points}};
-	foreach my $point (@points) {
-	    my($x0, $y0) = ($point->[0], $point->[1]);
-	    my($vx, $vy) = ($point->[2], $point->[3]);
-	    my($nx, $ny) = ($x0+$vx, $y0+$vy);
-	    if ($nx >= $w) {
-		$nx = $w;
-		$vx = -$vx;
-	    } elsif ($nx <= 1) {
-		$nx = 1;
-		$vx = -$vx;
-	    } elsif ($ny >= $h) {
-		$ny = $h;
-		$vy = -$vy;
-	    } elsif ($ny <= 1) {
-		$ny = 1;
-		$vy = -$vy;
-	    }
-	    ($point->[0], $point->[1]) = ($nx, $ny);
-	    ($point->[2], $point->[3]) = ($vx, $vy);
-	}
-	$tag = 'l' . $line_count++;
-	$self->{line_count} = $line_count;
-	my(@colors) = @{$self->{colors}};
-	$canvas->createLine($points[0][0], $points[0][1],
-			    $points[1][0], $points[1][1],
-			    -tags => $tag, -fill => '#' . $colors[$line_count % scalar(@colors)]);
-	$canvas->lower($tag);
-
-    } elsif ($mez eq 'annoying_blink') {
-	my $bg = $canvas->cget(-background);
-	$canvas->configure(-background => $bg eq 'blue' ? 'green' : 'blue');
+    } elsif ($mez eq 'none') {
+	return;
     } else {
-	warn "Unrecognized mesmerize type '$mez', reverting to 'lines'.";
-	$self->{Configure}{-mesmerize} = 'lines';
+	if ($self->{plug_init}) {
+	    exit unless &Animation($canvas) == 1;
+	} else { 
+	    no strict qw/refs/;
+	    unless (eval "require Tk::LockDisplay::$mez") {
+		warn "Couldn't load plugin file '$mez': $@";
+		exit;
+	    }
+	    unless (eval {&Animation($canvas)} == 1) {
+		warn "Plugin '$mez' failed to initialize.";
+		exit;
+	    }
+	    use strict qw/refs/;
+	    $self->{plug_init} = 1;
+	}
     } # end lines
     $canvas->idletasks;		# update() gives deep recursion!
 
@@ -219,11 +216,165 @@ sub snooze {
     my($self) = @_;
 
     my $canvas = $self->{canvas};
+    my $mez = $self->{Configure}{-animation};
     $canvas->coords(1, -1000, -1000);
-    $canvas->coords(2, -1000, -1000);
 
 } # end snooze
+
+sub text {
+
+    # Set canvas title text.
+
+    my($self, $text) = @_;
+    
+    $self->{label}->configure(-text => $text);
+
+} # end text
 
 sub unlock {$_[0]->{unlock}++}	# alert waitVariable() that we're done
 
 1;
+
+=head1 NAME
+
+Tk::LockDisplay - Create modal dialog and wait for a password response.
+
+=for pm Tk/LockDisplay.pm
+
+=for category Screensavers, Popups and Dialogs
+
+=head1 SYNOPSIS
+
+S<    >I<$lock> = I<$parent>-E<gt>B<LockDisplay>(I<-option> =E<gt> I<value>, ... );
+
+=head1 DESCRIPTION
+
+This widget fills the display with a screensaver-like animation, makes
+a global grab and then waits for the user's authentication string,
+usually their password.  Until the password is entered the display
+cannot be used: window manager commands are ignored, etcetera. Note, X
+server requests are not blocked.
+
+Password verification is perforemd via a callback passed during widget
+creation.
+
+While waiting for the user to respond, B<LockDisplay> sets a global
+grab.  This prevents the user from interacting with any application in
+any way except to type characters in the LockDisplay entry box.  See
+the B<Lock()> method.
+
+The following option/value pairs are supported:
+
+=over 4
+
+=item B<-authenticate>
+
+Password verification subroutine - it's passed two positional
+parameters, the username and password, and should return 1 if success,
+else 0.
+
+=item B<-animation>
+
+A string indicating what screensaver plugin to use, or 'none' to
+disable the screensaver.  Supplied plugins are 'lines' (default) and
+'counter', which reside in the directory .../Tk/LockDisplay.  You can
+drop a plugin of your own in that directory - see the section Plugin
+Format below for details.  You can also supply your own animation
+subroutine by passing a B<CODE> reference.  The subroutine is passed a
+single parameter, the canvas widget reference, which you can use to
+draw upon as you please.
+
+=item B<-animationinterval>
+
+The number of milliseconds between calls to the screen saver animation
+code.  Default is 10 milliseconds.
+
+=item B<-hide>
+
+How many seconds of display inactivity before hiding the password
+entry widget and canvas title text. Default is 10 seconds.
+
+=item B<-text>
+
+Title text centered in canvas.
+
+=item B<-foreground>
+
+Title text color.
+
+=item B<-background>
+
+Canvas color.
+
+=item B<-debug>
+
+Set to 1 allows a <Double-1> event to unlock the display.  Used while
+debugging your authentication callback.
+
+=back
+
+=head1 METHODS
+
+=over 4
+
+=item C<$lock-E<gt>B<Lock>;>
+
+This method locks the display and waits for the user's authentication data.
+
+=back
+
+=head1 EXAMPLE
+
+I<$lock> = I<$mw>-E<gt>B<LockDisplay>(-authenticate =E<gt> \&check_pw);
+
+sub check_pw {
+
+    # Perform AFS validation.
+
+    my($user, $pw) = @_;
+
+    system "/usr/afsws/bin/klog $user " . quotemeta($pw) . " 2> /dev/null";
+    if ($? == 0) {
+	exit;         # success
+    } else {
+	return 0;     # failure
+    }
+
+} # end check_pw
+
+=head1 PLUGIN FORMAT
+
+Refer to the "counter" plugin file .../Tk/LockDisplay/counter.pm for
+details on the structure of a LockDisplay animation plugin.
+
+=head1 HISTORY
+
+=over 4
+
+=item Version 1.0
+
+    Beta Release.
+
+=item Version 1.1
+
+    . Implement plugins and other fixes suggested by Achim Bohnet.  Thanks!
+    . Allow plugin name 'none' to disable screensaver.  Thanks Roderick Anderson!
+
+=back
+
+=head1 AUTHOR
+
+Stephen.O.Lidie@Lehigh.EDU
+
+=head1 COPYRIGHT
+
+Copyright (C) 1998 - 1998, Stephen O. Lidie.
+
+This program is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself.
+
+=head1 KEYWORDS
+
+screeensaver, dialog, modal
+
+=cut
