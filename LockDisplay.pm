@@ -1,5 +1,5 @@
 
-$Tk::LockDisplay::VERSION = '1.2';
+$Tk::LockDisplay::VERSION = '1.3';
 
 package Tk::LockDisplay;
 
@@ -83,7 +83,11 @@ sub Populate {
 
     my $user;
     if (not $user = getlogin) {
-	die "Can't get user name." if not $user = getpwuid($<);
+        if ($^O eq 'MSWin32') {
+            $user = $^O;
+        } else {
+            die "Can't get user name." if not $user = getpwuid($<);
+        }
     }
     $cw->{user} = $user;
     $cw->{-authenticate} = delete $args->{-authenticate};
@@ -319,7 +323,7 @@ Canvas color.
 =item B<-debug>
 
 Set to 1 allows a <Double-1> event to unlock the display.  Used while
-debugging your authentication callback or new plugin.
+debugging your authentication callback or plugin.
 
 =back
 
@@ -339,15 +343,15 @@ I<$lock> = I<$mw>-E<gt>B<LockDisplay>(-authenticate =E<gt> \&check_pw);
 
 sub check_pw {
 
-    # Perform AFS validation.
+    # Perform AFS validation unless on Win32.
 
     my($user, $pw) = @_;
 
-    system "/usr/afsws/bin/klog $user " . quotemeta($pw) . " 2> /dev/null";
-    if ($? == 0) {
-	exit;         # success
+    if ($^O eq 'MSWin32') {
+	($pw eq $^O) ? exit(0) : return(0);
     } else {
-	return 0;     # failure
+	system "/usr/afsws/bin/klog $user " . quotemeta($pw) . " 2> /dev/null";
+	($? == 0) ? exit(0) : return(0);
     }
 
 } # end check_pw
@@ -389,6 +393,11 @@ for its "main loop" processing.  As before, the return code should be
     . Plugins can return() their own -animationinterval value 
       during preset.
     . Add 'neko' plugin.
+
+=item Version 1.3
+
+    . Fix value of pi in neko plugin!
+    . Add Windows 95 support
 
 =back
 

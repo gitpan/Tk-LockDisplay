@@ -34,7 +34,6 @@ LockDisplay/images/rtogi1.ppm
 LockDisplay/images/rtogi2.ppm
 LockDisplay/images/sleep1.ppm
 LockDisplay/images/sleep2.ppm
-LockDisplay/images/space.ppm.hide
 LockDisplay/images/up1.ppm
 LockDisplay/images/up2.ppm
 LockDisplay/images/upleft1.ppm
@@ -47,3 +46,5 @@ misc/spectrum-colors
 misc/tklock-fract.gif
 test.pl
 tklock
+tklock.bat
+

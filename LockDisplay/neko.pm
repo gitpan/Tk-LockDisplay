@@ -1,39 +1,35 @@
 
 use File::Basename;
-use POSIX qw/atan2/;
+use POSIX qw/acos atan2/;
 use subs qw/do_awake do_move do_sleep do_stop do_togi frame init_plug position_to_heading set_state stopped/;
 use vars qw/$akubi_time $awake_time $canvas $close_enough $debug %dxdy $init $jare_time $kaki_time $maxx $maxy $nx
-    $ny $pi $pix $pixbits @pixlist %pixmaps $r2d $state $state_count $stop_time $togi_time $velocity $x $y $where/;
+    $ny $pi $pix $pixbits @pixlist %pixmaps $r2d $state %states $state_count $stop_time $togi_time $velocity $x $y
+    $where/;
+use strict;
 
 sub Animation {
 
     # neko
     #
-    # A Tk::LockDisplay plugin that emulates Masayuki Koba's xneko game.
+    # A Tk::LockDisplay plugin that emulates Masayuki Koba's xneko game.  This "mainloop" dispatches control to
+    # one of 5 state processors, each of which displays pixmaps based on the state's cycle count.
     #
-    # Stephen.O.Lidie@Lehigh.EDU, 98/09/21.
+    # Stephen.O.Lidie@Lehigh.EDU, 98/10/20.
 
     $canvas = $_[0];
 
     if ($init) {		# if plugin already initialized
 
 	$where = sprintf("state=%s, nx/ny=%d/%d", $state, $nx, $ny) if $debug;
-	$state_count++;		# how many completed cycles in the current state
-	if ($state eq 'NEKO_AWAKE') {
-	    do_awake;
-	} elsif ((my $dir) = $state =~ /^NEKO_(UP|UPRIGHT|RIGHT|DWRIGHT|DOWN|DWLEFT|LEFT|UPLEFT)$/) {
-	    do_move $dir;
-	} elsif ($state eq 'NEKO_STOP') {
-	    do_stop;
-	} elsif (($dir) = $state =~ /^NEKO_(UTOGI|RTOGI|DTOGI|LTOGI)$/) {
-	    do_togi $dir;
-	} elsif ($state eq 'NEKO_SLEEP') {
-	    do_sleep;
-	} else {
-	    print "Illegal neko state=$state!\n";
-	    return 0;		# fail
+	$state_count++;		# current state's cycle count
+      STATES:
+	foreach my $regex (keys %states) {
+	    next STATES unless (my $match) = $state =~ /^$regex$/;
+	    &{$states{$regex}}($match);
+	    return 1;		# success
 	}
-	return 1;		# success
+	print STDERR "Illegal neko state=$state!\n";
+	return 0;		# fail
 
     } else {	
 
@@ -61,14 +57,12 @@ sub init_plug {
 
     $debug = 0;
     my $base = Tk->findINC('LockDisplay/images');
-    $canvas->configure(
-        -background => 'white',
-        -cursor => ["\@$base/mouse.xbm", "$base/mouse.mask", qw/black white/],
-    );
+    my $cursor = $^O eq 'MSWin32' ? 'mouse' : ["\@$base/mouse.xbm", "$base/mouse.mask", qw/black white/];
+    $canvas->configure(-background => 'white', -cursor => $cursor);
     $canvas->idletasks;
     $canvas->createWindow(300, 300, -window => $canvas->Label(-textvariable => \$where)) if $debug;
     
-    $pi = 3.131592654;		# pi
+    $pi = acos(-1);		# pi
     $r2d = 180.0 / $pi;		# radians to degrees
     ($maxx, $maxy) = ($canvas->screenwidth, $canvas->screenheight); # display size
     ($nx, $ny) = ($maxx/2, $maxy/2 + 80); # current neko position
@@ -78,19 +72,27 @@ sub init_plug {
         -variable/ => \$velocity),
     );
     $canvas->idletasks;
-    $close_enough = 10;		# neko has caught mouse if within this pixel distance
-    %dxdy = (LEFT    => [-1,  0],
-	     RIGHT   => [+1,  0],
-	     UP      => [ 0, -1],
-	     DOWN    => [ 0, +1],
-	     DWLEFT  => [-1, +1],
-	     DWRIGHT => [+1, +1],
-	     UPLEFT  => [-1, -1],
-	     UPRIGHT => [+1, -1],
-	     );			# x/y pixel delta multipliers
+    $close_enough = 5;		# neko has caught mouse if within this pixel distance
+    %dxdy = (
+        LEFT    => [-1,  0],
+	RIGHT   => [+1,  0],
+        UP      => [ 0, -1],
+        DOWN    => [ 0, +1],
+        DWLEFT  => [-1, +1],
+        DWRIGHT => [+1, +1],
+        UPLEFT  => [-1, -1],
+        UPRIGHT => [+1, -1],
+    );				# x/y pixel delta multipliers
     $pix = '';			# currently displayed Pixmap
     $pixbits = 16;		# 0.5 Pixmap size in bits
     $state = '';		# current game state
+    %states = (
+        'NEKO_(AWAKE)' => \&do_awake,
+        'NEKO_(UP|UPRIGHT|RIGHT|DWRIGHT|DOWN|DWLEFT|LEFT|UPLEFT)' => \&do_move,
+        'NEKO_(STOP)' => \&do_stop,
+        'NEKO_(UTOGI|RTOGI|DTOGI|LTOGI)' => \&do_togi,
+        'NEKO_(SLEEP)' => \&do_sleep,
+    );				# neko state table
     $state_count = 0;		# current state's cycle count
     set_state 'NEKO_AWAKE';
     $akubi_time =  3 * 2;	# yawn cycles
@@ -166,13 +168,13 @@ sub init_plug {
 
 sub position_to_heading {
 
-    # Swiped and modified from my TclRobots entry #2, position_to_heading() determines the direction (as one
-    # of eight cardinal compass points) from neko to the mouse.  0 degress at three o'clock, moving clockwise.
+    # Swiped and modified from my TclRobots entry #2, position_to_heading() determines the direction (as one of
+    # eight cardinal compass points) from the neko to the mouse.  0 degress at three o'clock, moving clockwise.
 
     ($x, $y) = $canvas->pointerxy;
     $y -= ($pixbits / 2 + 3 );
 
-    # Don't let neko run off the display.
+    # Don't let the neko run off the display.
 
     if ($x < 0 + $pixbits) {
 	$x = $pixbits;
@@ -185,27 +187,24 @@ sub position_to_heading {
     }
     return if stopped;
 
-    # Return heading from neko to the mouse.
+    # Return heading from the neko to the mouse.
 
     my $h = int( $r2d * CORE::atan2( ($y - $ny), ($x - $nx) ) ) % 360;
-    my $dir;
-    if ($h >= 22.5 and $h < 67.5) {
-	$dir = 'DWRIGHT';
-    } elsif ($h >=  67.5 and $h < 112.5) {
-	$dir = 'DOWN';
-    } elsif ($h >= 112.5 and $h < 157.5) {
-	$dir = 'DWLEFT';
-    } elsif ($h >= 157.5 and $h < 202.5) {
-	$dir = 'LEFT';
-    } elsif ($h >= 202.5 and $h < 247.5) {
-	$dir = 'UPLEFT';
-    } elsif ($h >= 247.5 and $h < 292.5) {
-	$dir = 'UP';
-    } elsif ($h >= 292.5 and $h < 337.5) {
-	$dir = 'UPRIGHT';
-    } else {
-	$dir = 'RIGHT';
-    }
+    my($degrees, $dir);
+
+    foreach (
+	     [[ 22.5,  67.5], 'DWRIGHT'],
+	     [[ 67.5, 112.5], 'DOWN'],
+	     [[112.5, 157.5], 'DWLEFT'],
+	     [[157.5, 202.5], 'LEFT'],
+	     [[202.5, 247.5], 'UPLEFT'],
+	     [[247.5, 292.5], 'UP'],
+	     [[292.5, 337.5], 'UPRIGHT'],
+	     [[337.5,  22.5], 'RIGHT'],
+	     ) {
+	($degrees, $dir) = ($_->[0], $_->[1]);
+	last if $h >= $degrees->[0] and $h < $degrees->[1];
+    } # forend
 
     set_state "NEKO_$dir";
 
@@ -225,8 +224,8 @@ sub set_state {
 
 sub stopped {
 
-    # See if neko and mouse are close enough to pretend we are stopped.  $close_enough is tied
-    # to neko's velocity to prevent "directional hysteresis".
+    # See if the neko and mouse are close enough to pretend we are stopped.  $close_enough is tied
+    # to the neko's velocity to prevent "directional hysteresis".
 
     $close_enough = $velocity;
     ( abs($x - $nx) <= $close_enough and abs($y - $ny) <= $close_enough ) ? 1 : 0;

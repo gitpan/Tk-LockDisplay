@@ -21,10 +21,13 @@ Tk::LockDisplay ships with a few screensaver plugins, and has a hook
 to register your own Perl/Tk plugin or subroutine.  The special plugin
 'none' disables the screensaver animation.
 
-Oh, this code almost runs on WIN32.  The real problem is that
-LockDisplay bombs on the getlogin() call - rightly so, I suppose.
-Once you fake that, there's a memory leak, likely an after() or
-repeat() problem.
+LockDisplay is currently crippled on Win32 systems - it pretends the
+login user name is $^O and the password is $^O (the operating system
+name).  Eventually I'll make it work correctly on Windows NT.
+
+Oh, on Windows 95/98 the "lines" plugin has a memory leak, which I
+*think* is due to Tk not freeing memory when canvas lines items are
+deleted.  I don't see this problem on NT or any flavor of Unix.
 
 Installation:
 
@@ -33,4 +36,4 @@ Installation:
 	make test
 	make install
 
-Stephen.O.Lidie@Lehigh.EDU, 98/09/13
+Stephen.O.Lidie@Lehigh.EDU, 98/10/20
