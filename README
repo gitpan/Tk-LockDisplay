@@ -1,0 +1,30 @@
+
+Tk::LockDisplay is a Perl/Tk widget that disables an X display until a
+proper authentication string is entered (typically the user's
+passwd). The authentication subroutine is specified during widget
+creation.  People often lock their display for short periods of time
+when, for instance, they need to use the restroom.  It's needed around
+here because folks use xlock which doesn't do AFS authentication, so
+they're "inconvenienced".
+
+While the display is locked, a simple "screen saver" is displayed in
+case someone needs to waste time.  Tk::LockDisplay "wakes up" with a
+key press or mouse motion, and goes away when authentication is
+completed.
+
+After some number of (user configurable) seconds of inactivity, 10 by
+default, the password entry widget and logo are hidden so all that
+remains is the colorful screen saver display.  The "velocity" of the
+moving screen saver pattern is also user configurable.
+
+Tk::LockDisplay ships with a few screen savers, but has a hook to
+register your own Perl/Tk subroutine.
+
+Installation:
+
+	perl Makefile.PL
+	make
+	make test
+	make install
+
+Stephen.O.Lidie@Lehigh.EDU, 98/09/13

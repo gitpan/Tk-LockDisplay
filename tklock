@@ -1,0 +1,35 @@
+#!/usr/local/bin/perl -w
+#
+# tklock - a quick and dirty xlock-like program for AFS-land.
+#
+# Stephen.O.Lidie@Lehigh.EDU, Lehigh University Computing Center.  98/09/13
+#
+# This program is free software; you can redistribute it and/or modify it under
+# the same terms as Perl itself.
+
+use Tk;
+use Tk::LockDisplay;
+use subs qw/check_pw/;
+use strict;
+
+my $mw = MainWindow->new(qw/-width 1 -height 1/);
+$mw->waitVisibility;		# needed for grab to work
+my $ld = $mw->LockDisplay(-authenticate => \&check_pw, -debug => 1);
+$ld->Lock;
+MainLoop;
+
+sub check_pw {
+
+    # Perform AFS validation.
+
+    my($user, $pw) = @_;
+
+#    system "/usr/afsws/bin/klog $user $pw 2> /dev/null";
+    system "/home/bug/perl/klog $user $pw 2> /dev/null";
+    if ($? == 0) {
+	exit;
+    } else {
+	return 0;
+    }
+
+} # end check_pw

@@ -1,0 +1,9 @@
+MANIFEST
+Makefile.PL
+README
+LockDisplay.pm
+LockDisplay.pod
+misc/spectrum-colors
+misc/tklock-fract.gif
+test.pl
+tklock
