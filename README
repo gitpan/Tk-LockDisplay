@@ -1,7 +1,7 @@
 
 Tk::LockDisplay is a Perl/Tk widget that disables an X display until a
 proper authentication string is entered (typically the user's
-passwd). The authentication subroutine is specified during widget
+password). The authentication subroutine is specified during widget
 creation.  People often lock their display for short periods of time
 when, for instance, they need to use the restroom.  It's needed around
 here because folks use xlock which doesn't do AFS authentication, so
@@ -21,9 +21,10 @@ Tk::LockDisplay ships with a few screensaver plugins, and has a hook
 to register your own Perl/Tk plugin or subroutine.  The special plugin
 'none' disables the screensaver animation.
 
-Oh, this code almost runs on WIN32.  The real problem is that LocKDisplay
-bombs on the getlogin() call - rightly so, I suppose.  Once you fake that,
-there's a memory leak, likely an after() or repeat() problem.
+Oh, this code almost runs on WIN32.  The real problem is that
+LockDisplay bombs on the getlogin() call - rightly so, I suppose.
+Once you fake that, there's a memory leak, likely an after() or
+repeat() problem.
 
 Installation:
 

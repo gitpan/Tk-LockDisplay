@@ -5,7 +5,7 @@ use ExtUtils::MakeMaker;
 my $pm = 'LockDisplay.pm';
 open(V, $pm) or die "Cannot open $pm:  $!";
 while (defined($_ = <V>)) {
-    last unless /^$/;
+    last if /^\S+/;
 }
 close(V) or die $!;
 my($v) = /['"]([^'"]+)/;
@@ -14,6 +14,7 @@ die "Version $v is invalid." unless $v;
 WriteMakefile(
     NAME      => 'Tk::LockDisplay',
     DISTNAME  => 'Tk-LockDisplay',
+    EXE_FILES => ['tklock'],
     VERSION   => "$v",
     dist      => {COMPRESS => 'gzip', SUFFIX => 'gz'},
     ($] >= 5.005 ?

@@ -16,7 +16,7 @@ my $mw = MainWindow->new(qw/-width 1 -height 1/);
 $mw->withdraw;
 my $animation = $ARGV[0];
 $animation ||= 'lines';
-my $ld = $mw->LockDisplay(-authenticate => \&check_pw, -animation => $animation, -debug => 0);
+my $ld = $mw->LockDisplay(-authenticate => \&check_pw, -debug => 0, -animation => $animation);
 $ld->Lock;
 MainLoop;
 

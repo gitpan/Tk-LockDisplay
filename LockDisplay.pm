@@ -1,5 +1,5 @@
 
-$Tk::LockDisplay::VERSION = '1.1';
+$Tk::LockDisplay::VERSION = '1.2';
 
 package Tk::LockDisplay;
 
@@ -19,19 +19,19 @@ Construct Tk::Widget 'LockDisplay';
 
 sub Lock {
 
-    # Realize the dialog, start the screensaver and snooze timer events, clear the password entry, save the current focus and
-    # grab and set ours, raise the dialog and wait for the password, release our grab, clear timers, hide the dialog and restore
-    # the original focus and grab.  Whew.  (Of course, no timer stuff unless we're animating.)
+    # Realize the dialog, start the screensaver and snooze timer events, clear the password entry, save the current
+    # focus and grab and set ours, raise the dialog and wait for the password, release our grab, clear timers, hide
+    # the dialog and restore the original focus and grab.  Whew.  (Of course, no timer stuff unless we're animating.)
 
     my($self) = @_;
     
-    $self->deiconify;
-    $self->waitVisibility;
     my $mez = $self->{Configure}{-animation};
     unless ($mez eq 'none') {
 	$self->{mid} = $self->repeat($self->{Configure}{-animationinterval} => [$self => 'mesmerize']);
 	$self->{tid} = $self->after($self->{Configure}{-hide} * 1000  => [$self => 'snooze']);
     }
+    $self->deiconify;
+    $self->waitVisibility;
     $self->{entry}->delete(0 => 'end');
     my $old_focus = $self->focusSave;
     my $old_grab  = $self->grabSave;
@@ -57,7 +57,7 @@ sub Populate {
     # -authenticate => authentication subroutine
     # user          => username
     # pw            => password
-    # unlock        => changes when user properly authenticates
+    # unlock        => modified when user properly authenticates
     #
     # w             => display width, pixels
     # h             => display height, pixels
@@ -66,7 +66,7 @@ sub Populate {
     # entry         => entry widget reference
     #
     # tid           => -hide after() timer id
-    # mid           => -animation interval repeat() id
+    # mid           => -animationinterval repeat() id
     #
     # plug_init     => 1 IFF plugin initialized
     # -debug        => 1 IFF <Double-1> can unlock display
@@ -82,7 +82,9 @@ sub Populate {
     # Process arguments.
 
     my $user;
-    die "Can't get user name." if not $user = getlogin;
+    if (not $user = getlogin) {
+	die "Can't get user name." if not $user = getpwuid($<);
+    }
     $cw->{user} = $user;
     $cw->{-authenticate} = delete $args->{-authenticate};
     die "-authenticate callback is improper or missing." unless ref($cw->{-authenticate}) eq 'CODE';
@@ -91,7 +93,7 @@ sub Populate {
     $args->{-animation} ||= 'lines';
     $cw->SUPER::Populate($args);
     
-    # Miscellaneous constants
+    # Miscellaneous constants.
 
     my($w, $h) = ($cw->screenwidth, $cw->screenheight);
     $cw->{w} = $w;
@@ -125,7 +127,7 @@ sub Populate {
 
     $cw->ConfigSpecs(
 		     -animation         => [qw/PASSIVE animation Animation lines/],
-		     -animationinterval => [qw/PASSIVE animationInterval AnimationInterval 10/],
+		     -animationinterval => [qw/PASSIVE animationInterval AnimationInterval 200/],
 		     -background        => [$canvas, qw/background Background black/],
 		     -foreground        => [$l, qw/ foreground Foreground blue/],
 		     -hide              => [qw/PASSIVE hide Hide 10/],
@@ -183,25 +185,32 @@ sub mesmerize {
 
     my $canvas = $self->{canvas};
     my $mez = $self->{Configure}{-animation};
+    my $ai = undef;
 
     if (ref($mez) eq 'CODE') {	# user specified mesmerizing routine
-        &$mez($canvas);
+        exit unless &$mez($canvas) >= 1;
     } elsif ($mez eq 'none') {
 	return;
     } else {
 	if ($self->{plug_init}) {
-	    exit unless &Animation($canvas) == 1;
+	    exit unless &Animation($canvas) >= 1;
 	} else { 
 	    no strict qw/refs/;
 	    unless (eval "require Tk::LockDisplay::$mez") {
 		warn "Couldn't load plugin file '$mez': $@";
 		exit;
 	    }
-	    unless (eval {&Animation($canvas)} == 1) {
+	    $ai = &Animation($canvas);
+	    unless ($ai >= 1) {
 		warn "Plugin '$mez' failed to initialize.";
 		exit;
 	    }
 	    use strict qw/refs/;
+	    if ($ai > 1) {	# restart timer event with new cycle value
+		$self->{Configure}{-animationinterval} = $ai;
+		$self->afterCancel($self->{mid});
+		$self->{mid} = $self->repeat($self->{Configure}{-animationinterval} => [$self => 'mesmerize']);
+	    }
 	    $self->{plug_init} = 1;
 	}
     } # end lines
@@ -276,18 +285,19 @@ else 0.
 =item B<-animation>
 
 A string indicating what screensaver plugin to use, or 'none' to
-disable the screensaver.  Supplied plugins are 'lines' (default) and
+disable the screensaver.  Supplied plugins are 'lines' (default), 'neko'  and
 'counter', which reside in the directory .../Tk/LockDisplay.  You can
 drop a plugin of your own in that directory - see the section Plugin
 Format below for details.  You can also supply your own animation
 subroutine by passing a B<CODE> reference.  The subroutine is passed a
-single parameter, the canvas widget reference, which you can use to
+single parameter, the canvas widget reference, which you can
 draw upon as you please.
 
 =item B<-animationinterval>
 
-The number of milliseconds between calls to the screen saver animation
-code.  Default is 10 milliseconds.
+The number of milliseconds between calls to the screen saver animation code.
+Default is 200 milliseconds.  Plugins can specifiy their own interval by
+returning the number of milliseconds (> 1) during initialization.
 
 =item B<-hide>
 
@@ -309,7 +319,7 @@ Canvas color.
 =item B<-debug>
 
 Set to 1 allows a <Double-1> event to unlock the display.  Used while
-debugging your authentication callback.
+debugging your authentication callback or new plugin.
 
 =back
 
@@ -345,7 +355,17 @@ sub check_pw {
 =head1 PLUGIN FORMAT
 
 Refer to the "counter" plugin file .../Tk/LockDisplay/counter.pm for
-details on the structure of a LockDisplay animation plugin.
+details on the structure of a LockDisplay animation plugin.  Basically,
+you create a ".pm" file that describes your plugin, "counter.pm" for
+instance.  This file must contain a subroutine called Animate($canvas),
+where $canvas is the canvas widget reference passed to it.
+
+LockDisplay first require()s your plugin file, and, if that succeeds,
+calls it once to perform initialization.  Animate() should return 0 for
+failure, 1 for success, and > 1 for success I<and> to specifiy a private
+-animationinterval (in milliseconds).  Subsequent calls to Animate() are
+for its "main loop" processing.  As before, the return code should be
+0 or 1 for failure or success, respectively.
 
 =head1 HISTORY
 
@@ -357,8 +377,18 @@ details on the structure of a LockDisplay animation plugin.
 
 =item Version 1.1
 
-    . Implement plugins and other fixes suggested by Achim Bohnet.  Thanks!
-    . Allow plugin name 'none' to disable screensaver.  Thanks Roderick Anderson!
+    . Implement plugins and other fixes suggested by Achim Bohnet.
+      Thanks!
+    . Allow plugin name 'none' to disable screensaver.  Thanks to
+      Roderick Anderson!
+
+=item Version 1.2
+
+    . getlogin() fails on HPUX, so try getpwuid() as a fallback.
+      Thanks to Paul Schinder for the CPAN-Testers bug report.
+    . Plugins can return() their own -animationinterval value 
+      during preset.
+    . Add 'neko' plugin.
 
 =back
 
